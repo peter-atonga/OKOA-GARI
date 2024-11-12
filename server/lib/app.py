@@ -373,21 +373,144 @@ api.add_resource(Feature_By_Id,'/feature/<int:id>')
 
 class Create_Garage_Service(Resource):
     @jwt_required()
+    def get(self):
+        services=Garage_Service.query.all()
+        return make_response([service.to_dict() for service in services],200)
+    
+    @jwt_required()
     def post(self):
+        #creates a garage service and updates its details/description and proceeds to update pricing about the service
         user_id=get_jwt_identity()
         if user_id:
             data=request.get_json()
-            if 'service' in data and 'service_type' in data and 'garage_id' in data:
+            if 'service' in data and 'service_type' in data and 'garage_id' in data and 'detail' in data and "amount" in data and 'pricing_detail' in data:
                 if data.get("service_type") in ['Towing',"Other"]:
                     new_garage_service=Garage_Service(service=data.get("service"),service_type=Service_Type_Enum(data.get("service_type")),
                                                       garage_id=data.get("garage_id"),created_at=datetime.datetime.now())
                     db.session.add(new_garage_service)
+                    db.session.commit()
+                    # proceed to update details of the service
+                    service_detail=Service_Detail(detail=data.get("detail"),
+                                                  service_id=new_garage_service.id,
+                                                  created_at=datetime.datetime.now())
+                    db.session.add(service_detail)
+                    db.session.commit()
+                    #proceed to add payment details/amount about the service
+                    service_price=Service_Pricing(amount=data.get("amount"), detail=data.get("pricing_detail"),
+                                                  service_id=new_garage_service.id,created_at=datetime.datetime.now())
+                    db.session.add(service_price)
                     db.session.commit()
                     return make_response(new_garage_service.to_dict(),201)
                 return make_response({"msg":"Service type must be Towing or Other"})
             return make_response({"msg":"Required data is missing"},400)
         return make_response({"msg":"User session expired"},412)
 api.add_resource(Create_Garage_Service,'/garage-service')
+
+class Garage_Service_By_Id(Resource):
+    @jwt_required()
+    def get(self,id):
+        service=Garage_Service.query.filter_by(id=id).first()
+        if service:
+            return make_response(service.to_dict(),200)
+        return make_response({"msg":"Service does not exist"},400)
+    
+    @jwt_required()
+    def delete(self,id):
+        service=Garage_Service.query.filter_by(id=id).frist()
+        if service:
+            db.session.delete(service)
+            db.session.commit()
+            return make_response({"msg":"Service deleted successfully"},204)
+        return make_response({"msg":"Service not found"},400)
+    
+    @jwt_required()
+    def patch(self,id):
+        service=Garage_Service.query.filter_by(id=id).first()
+        if service:
+            data=request.get_json()
+            # update garage service details
+            for item in ['service','service_type',"garage_id"]:
+                if item in data:
+                    setattr(service,item,data.get(item))
+            db.session.add(service)
+            db.session.commit()
+            #update details of the service
+            service_detail=Service_Detail.query.filter_by(service_id=service.id).first()
+            if 'detail' in data:
+                setattr(service_detail,"detail",data.get("detail"))
+                setattr(service_detail,"updated_at",datetime.datetime.now())
+            db.session.add(service_detail)
+            db.session.commit()
+            #update service details and/or pricing
+            service_pricing=Service_Pricing.query.filter_by(service_id=service.id).first()
+            for item in ['amount','pricing_detail']:
+                if item in data:
+                    setattr(service_pricing,item,data.get(item))
+            setattr(service_pricing,"updated_at",datetime.datetime.now())
+            db.session.add(service_pricing)
+            db.session.commit()
+            return make_response(service.to_dict(),200)
+        return make_response({"msg":"Service not found"},400)
+api.add_resource(Garage_Service_By_Id,'/service/<int:id>')
+
+class Create_Get_Payment(Resource):
+    @jwt_required()
+    def get(self): #get all payments
+        user_id=get_jwt_identity()
+        if user_id:
+            payments=Payment.query.all()
+            return make_response([payment.to_dict() for payment in payments],200)
+        return make_response({"msg":"User session expired"},412)
+    
+    @jwt_required()
+    def post(self): #creates a new payment record
+        user_id=get_jwt_identity()
+        if user_id:
+            data=request.get_json()
+            if "service_id" in data:
+                new_payment=Payment(service_id=data.get("service_id"),user_id=user_id)
+                db.session.add(new_payment)
+                db.session.commit()
+                return make_response(new_payment.to_dict(),201)
+            return make_response({"msg":"Required data missing"},400)
+        return make_response({"msg":"User session expired"},412)
+api.add_resource(Create_Get_Payment,'/payments')
+
+class Payment_By_Id(Resource):
+    @jwt_required()
+    def get(self,id):
+        user_id=get_jwt_identity()
+        if user_id:
+            payment=Payment.query.filter_by(id=id).first()
+            if payment:
+                return make_response(payment.to_dict(),200)
+            return make_response({"msg":"Payment not found"},400)
+        return make_response({"msg":"User session expired"},412)
+    
+    @jwt_required()
+    def delete(self,id):
+        user_id=get_jwt_identity()
+        if user_id:
+            payment=Payment.query.filter_by(id=id).first()
+            if payment:
+                db.session.delete(payment)
+                db.session.commit()
+                return make_response({"msg":"Payment deleted successfully"},204)
+            return make_response({"msg":"Payment not found"},400)
+        return make_response({"msg":"User session expired"},412)
+    
+    @jwt_required()
+    def patch(self,id):
+        payment=Payment.query.filter_by(id=id).first()
+        if payment:
+            data=request.get_json()
+            if "service_id" in data:
+                setattr(payment,"service_id",data.get("service_id"))
+            db.session.add(payment)
+            db.session.commit()
+            return make_response(payment.to_dict(),200)
+        return make_response({"msg":"Payment not found"},400)
+api.add_resource(Payment_By_Id,'/payment/<int:id>')
 
 
 if __name__=="__main__":
